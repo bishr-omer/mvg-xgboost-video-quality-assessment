@@ -1,1 +1,248 @@
-# mvg-xgboost-video-quality-assessment
+<div align="center">
+
+# 🎬 MVG-VQA
+### No-Reference Video Quality Assessment via Multivariate Gaussian Modelling
+
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![XGBoost](https://img.shields.io/badge/XGBoost-2.0+-FF6600?style=flat-square)](https://xgboost.readthedocs.io)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![Related](https://img.shields.io/badge/Related-MVG--SDI_(Spectral)-blue?style=flat-square)](https://github.com/bishromer/MVG-SDI)
+[![Related](https://img.shields.io/badge/Related-MVG--Spa_(Spatial)-orange?style=flat-square)](https://github.com/bishromer/MVG-Spa)
+
+<br/>
+
+**Bishr Omer Abdelrahman Adam · Xu Li\***
+
+*School of Electronics and Information, Northwestern Polytechnical University, Xi'an 710129, China*
+
+<br/>
+
+> **TL;DR** — MVG-VQA extracts spatial, temporal, and MVG statistical features from video frames, then trains an XGBoost regressor to predict Mean Opinion Score (MOS). It extends the MVG quality assessment framework from pansharpened images to the video domain.
+
+</div>
+
+---
+
+## 🧭 The MVG Quality Assessment Suite
+
+| Repo | Domain | Input | Method |
+|---|---|---|---|
+| [**MVG-SDI**](https://github.com/bishromer/MVG-SDI) | Remote sensing · Spectral | MS + Fused image | Benford FDD + Color Moments → MVG |
+| [**MVG-Spa**](https://github.com/bishromer/MVG-Spa) | Remote sensing · Spatial | PAN + Fused image | Log-Gabor + LBP + Edge → MVG |
+| **MVG-VQA** *(this repo)* | Video · Perceptual | Raw video file | Spatial + Temporal + MVG → XGBoost |
+
+---
+
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Features](#-features)
+- [Project Structure](#-project-structure)
+- [Quick Start](#-quick-start)
+- [Training](#-training)
+- [Inference](#-inference)
+- [Citation](#-citation)
+
+---
+
+## 🔭 Overview
+
+MVG-VQA is a no-reference (blind) video quality assessment system. It does not require a pristine reference video — quality is predicted purely from the content of the distorted video.
+
+The pipeline has three stages:
+
+```
+Video ──► Feature Extraction ──► XGBoost Regressor ──► MOS Prediction
+              │
+              ├── Spatial    : Laplacian sharpness, NIQE, Canny edges, LBP
+              ├── Temporal   : Optical flow, forward-backward consistency,
+              │                warp error, SSIM, chroma instability
+              ├── Advanced   : Flow variance, zero-flow ratio, blockiness,
+              │                FFT flicker, frame difference
+              └── MVG        : Mahalanobis distances + covariance eigenvalues
+```
+
+---
+
+## 🔬 Features
+
+### Spatial Features (per frame → aggregated)
+
+| Feature | Key prefix | Description |
+|---|---|---|
+| Laplacian variance | `sharp_*` | Sharpness / blur detection |
+| NIQE | `niqe_*` | Perceptual quality (no-reference) |
+| Canny edge density | `canny_edges_*` | Fraction of edge pixels |
+| LBP variance | `lbp_*` | Texture richness |
+
+### Temporal Features (per frame pair → aggregated)
+
+| Feature | Key prefix | Description |
+|---|---|---|
+| Chroma instability | `dCb_*`, `dCr_*` | Colour channel drift |
+| Optical flow magnitude | `flow_mag_*` | Motion amount |
+| Flow spatial variance | `flow_var_*` | Motion uniformity |
+| Zero-flow ratio | `zero_flow_*` | Fraction of static regions |
+| Forward-backward consistency | `fb_*` | Temporal coherence |
+| Warp error | `warp_*` | Luminance prediction error |
+| Frame-to-frame SSIM | `ssim_*` | Structural temporal stability |
+| Frame difference | `flicker_*` | Flicker / jitter |
+| FFT flicker ratio | `fft_flicker_ratio` | Spectral energy in 1–3 Hz band |
+| Blockiness | `block_*` | Grid artifact strength |
+
+### MVG Features (whole video)
+
+| Feature | Key | Description |
+|---|---|---|
+| Mahalanobis distance | `mahala_*` | Frame deviation from mean quality |
+| Eigenvalue mean | `mvg_eigval_mean` | Feature spread |
+| Eigenvalue std | `mvg_eigval_std` | Feature correlation spread |
+| Eigenvalue max | `mvg_eigval_max` | Dominant quality variation |
+
+**All aggregations:** `mean`, `std`, `p05`, `p50`, `p95`, `max`.
+
+---
+
+## 📁 Project Structure
+
+```
+MVG-VQA/
+├── extract_features.py     # Feature extraction pipeline (parallel, cached)
+├── train.py                # XGBoost training + hyperparameter search
+├── predict.py              # Inference on new videos (CLI)
+├── requirements.txt
+├── src/
+│   ├── utils.py                    # Shared agg_basic() helper
+│   ├── spatial_features.py         # Laplacian, NIQE, Canny, LBP
+│   ├── temporal_features.py        # Flow, FB consistency, warp, SSIM
+│   ├── advanced_temporal_features.py # Flow variance, blockiness, FFT flicker
+│   ├── mvg_features.py             # Per-frame MVG vectors + statistics
+│   └── nima_features.py            # (optional) Deep perceptual features
+├── data/
+│   ├── train_videos/       # Put your video files here
+│   ├── labels.csv          # video_id, mos
+│   ├── features.pkl        # Generated by extract_features.py
+│   └── selected_features.pkl  # Feature selection output
+├── cache/
+│   └── features/           # Per-video feature cache (auto-created)
+└── models/
+    └── xgb_mvg_final.pkl   # Trained model bundle
+```
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Clone and install
+git clone https://github.com/bishromer/MVG-VQA.git
+cd MVG-VQA
+pip install -r requirements.txt
+
+# 2. Place your videos and labels
+#    data/train_videos/*.mp4
+#    data/labels.csv  (columns: video_id, mos)
+
+# 3. Extract features  (parallel, results cached per video)
+python extract_features.py
+
+# 4. Train
+python train.py
+
+# 5. Predict on a new video
+python predict.py path/to/video.mp4
+```
+
+### Expected `labels.csv` format
+
+```csv
+video_id,mos
+video_001,3.72
+video_002,2.15
+video_003,4.41
+```
+
+---
+
+## 🏋️ Training
+
+```bash
+python train.py
+```
+
+The training script runs a **200-iteration randomised hyperparameter search** using stratified K-Fold cross-validation (5 folds), then retrains on the full dataset with the best configuration.
+
+**Hyperparameter search space:**
+
+| Parameter | Options |
+|---|---|
+| `n_estimators` | 100, 300, 500 |
+| `max_depth` | 3, 5, 7 |
+| `learning_rate` | 0.01, 0.05, 0.1 |
+| `subsample` | 0.6, 0.8, 1.0 |
+| `colsample_bytree` | 0.6, 0.8, 1.0 |
+| `reg_lambda` | 0.5, 1.0, 2.0 |
+| `gamma` | 0, 0.1, 0.3 |
+
+**Evaluation metrics:** SRCC, PLCC, RMSE, MAE (higher SRCC/PLCC = better; lower RMSE/MAE = better).
+
+---
+
+## 🎯 Inference
+
+```bash
+# Single video → prints predicted MOS
+python predict.py video.mp4
+
+# Entire directory → sorted table
+python predict.py data/test_videos/
+
+# Custom model
+python predict.py video.mp4 --model models/my_model.pkl
+```
+
+Example output:
+```
+Video                                          Predicted MOS
+-------------------------------------------------------------
+  reference_720p.mp4                                  4.1823
+  compressed_medium.mp4                               3.4461
+  compressed_heavy.mp4                                2.2017
+  livestream_artifact.mp4                             1.8834
+-------------------------------------------------------------
+  Average                                             2.9284
+```
+
+---
+
+## 📎 Citation
+
+```bibtex
+@misc{adam2026mvgvqa,
+  title  = {MVG-VQA: No-Reference Video Quality Assessment via
+            Multivariate Gaussian Modelling},
+  author = {Adam, Bishr Omer Abdelrahman and Li, Xu},
+  year   = {2026},
+  note   = {Northwestern Polytechnical University}
+}
+```
+
+If you use the related pansharpening quality tools, also cite:
+
+```bibtex
+@article{adam2026mvgsdi,
+  title   = {A No-Reference Multivariate Gaussian-Based Spectral
+             Distortion Index for Pansharpened Images},
+  author  = {Adam, Bishr Omer Abdelrahman and Li, Xu and
+             Wu, Jingying and Hao, Xiankun},
+  journal = {Sensors},
+  volume  = {26}, number = {3}, pages = {1002}, year = {2026},
+  doi     = {10.3390/s26031002}
+}
+```
+
+---
+
+<div align="center">
+<sub>© 2026 Adam et al. · Northwestern Polytechnical University · Part of the MVG quality assessment suite</sub>
+</div>
