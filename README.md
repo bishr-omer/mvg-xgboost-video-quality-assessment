@@ -11,7 +11,7 @@
 
 <br/>
 
-**Bishr Omer Abdelrahman Adam · Xu Li\***
+**Bishr Omer Abdelrahman Adam***
 
 *School of Electronics and Information, Northwestern Polytechnical University, Xi'an 710129, China*
 
