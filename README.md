@@ -217,16 +217,6 @@ Video                                          Predicted MOS
 
 ## 📎 Citation
 
-```bibtex
-@misc{adam2026mvgvqa,
-  title  = {MVG-VQA: No-Reference Video Quality Assessment via
-            Multivariate Gaussian Modelling},
-  author = {Adam, Bishr Omer Abdelrahman and Li, Xu},
-  year   = {2026},
-  note   = {Northwestern Polytechnical University}
-}
-```
-
 If you use the related pansharpening quality tools, also cite:
 
 ```bibtex
